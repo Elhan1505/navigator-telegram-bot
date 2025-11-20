@@ -2,11 +2,14 @@
 Модуль управления доступом и лимитами пользователей.
 """
 import os
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from .models import User, ActivationCode
+
+logger = logging.getLogger(__name__)
 
 # Константы тарифа
 PLAN_REQUESTS = 100  # Количество запросов в одном тарифе
@@ -18,6 +21,20 @@ REQUEST_WARNING_THRESHOLDS = [30, 10, 3]  # Предупреждения при 
 DAY_WARNING_THRESHOLDS = [7, 3, 1]        # Предупреждения при оставшихся днях
 
 PAYMENT_LINK = os.getenv("PAYMENT_LINK", "")
+
+
+def normalize_datetime_to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """
+    Приводит datetime к timezone-aware UTC.
+    Если datetime уже имеет tzinfo, оставляет как есть.
+    Если datetime naive (без tzinfo), добавляет UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # Naive datetime - считаем, что это UTC и добавляем tzinfo
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class AccessStatus:
@@ -65,14 +82,25 @@ def check_access(db: Session, telegram_id: int) -> AccessStatus:
 
     now = datetime.now(timezone.utc)
 
+    # Нормализуем expires_at к timezone-aware UTC для корректного сравнения
+    expires_at = normalize_datetime_to_utc(user.expires_at)
+
+    # Логируем тип datetime для отладки
+    if expires_at:
+        logger.debug(
+            f"check_access для {telegram_id}: expires_at={expires_at}, "
+            f"tzinfo={'aware' if expires_at.tzinfo else 'naive'}"
+        )
+
     # Проверяем, есть ли активный доступ
     remaining_requests = user.total_requests_in_plan - user.used_requests_in_plan
 
     # Проверка срока действия
     access_expired = False
-    if user.expires_at:
-        if now >= user.expires_at:
+    if expires_at:
+        if now >= expires_at:
             access_expired = True
+            logger.info(f"Доступ для {telegram_id} истёк: {expires_at.strftime('%d.%m.%Y %H:%M')} UTC")
 
     # Проверка лимита запросов
     requests_exhausted = remaining_requests <= 0
@@ -86,7 +114,7 @@ def check_access(db: Session, telegram_id: int) -> AccessStatus:
         if user.total_requests_in_plan == 0:
             denial_reason = "У вас нет активного пакета. Активируйте доступ с помощью кода или оплатите тариф."
         elif access_expired:
-            denial_reason = f"Срок действия вашего доступа истёк {user.expires_at.strftime('%d.%m.%Y')}. Продлите доступ."
+            denial_reason = f"Срок действия вашего доступа истёк {expires_at.strftime('%d.%m.%Y')}. Продлите доступ."
         elif requests_exhausted:
             denial_reason = "Вы исчерпали все запросы из текущего пакета. Продлите доступ для получения новых запросов."
 
@@ -100,12 +128,12 @@ def check_access(db: Session, telegram_id: int) -> AccessStatus:
                 break
 
         # Предупреждение по сроку
-        if user.expires_at and not warning_message:
-            days_remaining = (user.expires_at - now).days
+        if expires_at and not warning_message:
+            days_remaining = (expires_at - now).days
             for threshold in DAY_WARNING_THRESHOLDS:
                 if days_remaining == threshold:
                     days_word = "день" if threshold == 1 else "дня" if threshold < 5 else "дней"
-                    warning_message = f"⚠️ Ваш доступ истекает через {days_remaining} {days_word} ({user.expires_at.strftime('%d.%m.%Y')})."
+                    warning_message = f"⚠️ Ваш доступ истекает через {days_remaining} {days_word} ({expires_at.strftime('%d.%m.%Y')})."
                     break
 
     return AccessStatus(
@@ -114,7 +142,7 @@ def check_access(db: Session, telegram_id: int) -> AccessStatus:
         total_requests_in_plan=user.total_requests_in_plan,
         used_requests_in_plan=user.used_requests_in_plan,
         total_requests_all_time=user.total_requests_all_time,
-        expires_at=user.expires_at,
+        expires_at=expires_at,
         warning_message=warning_message,
         denial_reason=denial_reason,
     )
