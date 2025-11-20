@@ -1,2 +1,11 @@
+# Telegram Bot API
 python-telegram-bot>=21.0
+
+# HTTP клиент для запросов к MCP-серверу
 httpx>=0.27.0
+
+# ORM для работы с базой данных
+sqlalchemy>=2.0.0
+
+# PostgreSQL драйвер (опционально, если используется PostgreSQL)
+psycopg2-binary>=2.9.0
