@@ -312,6 +312,110 @@ railway restart
 - `NAVIGATOR_FRAMEWORK_NAME` - Имя фреймворка (по умолчанию: `navigator_vocalis`)
 - `DATABASE_URL` - Строка подключения к БД (по умолчанию: SQLite)
 - `PAYMENT_LINK` - Ссылка на оплату/активацию (BotHelp или другая система)
+- `PAYMENT_API_SECRET` - Секретный ключ для Payment API (обязателен для работы Payment API)
+
+## Payment API
+
+Бот включает HTTP API для автоматической выдачи платных кодов активации после успешной оплаты.
+
+### Запуск Payment API
+
+Payment API автоматически запускается вместе с Telegram-ботом на порту 8000. В Railway настроено совместное выполнение:
+- HTTP-сервер (uvicorn) на порту 8000 для Payment API
+- Telegram-бот на polling для обработки сообщений
+
+### Эндпоинт для выдачи платных кодов
+
+**POST `/issue_paid_code`** - Создаёт новый платный код активации
+
+#### Запрос:
+
+```bash
+curl -X POST https://your-railway-app.railway.app:8000/issue_paid_code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "secret": "your-payment-api-secret",
+    "note": "bothelp"
+  }'
+```
+
+**JSON-тело запроса:**
+```json
+{
+  "secret": "your-payment-api-secret",
+  "note": "bothelp"
+}
+```
+
+Параметры:
+- `secret` (обязательный) - Секретный ключ для авторизации (из переменной окружения `PAYMENT_API_SECRET`)
+- `note` (необязательный) - Метка источника платежа (например, "bothelp", "manual", и т.д.)
+
+#### Ответ:
+
+**Успешный ответ (201 Created):**
+```json
+{
+  "code": "ABCDEFGH23",
+  "limit_requests": 100,
+  "days_valid": 30
+}
+```
+
+**Ошибка авторизации (401 Unauthorized):**
+```json
+{
+  "detail": "Invalid secret"
+}
+```
+
+**Ошибка сервера (500 Internal Server Error):**
+```json
+{
+  "detail": "Не удалось создать уникальный код. Попробуйте ещё раз."
+}
+```
+
+### Дополнительные эндпоинты
+
+**GET `/health`** - Проверка работоспособности API
+
+```bash
+curl https://your-railway-app.railway.app:8000/health
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "service": "navigator-telegram-bot-payment-api"
+}
+```
+
+### Интеграция с BotHelp
+
+1. Настройте webhook в BotHelp для вызова эндпоинта `/issue_paid_code` после успешной оплаты
+2. Передайте полученный код клиенту
+3. Клиент активирует код через команду `/start КОД` в Telegram-боте
+
+### Безопасность
+
+- Всегда используйте HTTPS для запросов к Payment API
+- Храните `PAYMENT_API_SECRET` в безопасности (переменные окружения Railway)
+- Никогда не передавайте секрет клиентам или не размещайте его в публичных местах
+- Секрет должен быть сложным (рекомендуется 32+ символов случайной строки)
+
+### Настройка в Railway
+
+Добавьте переменную окружения в Railway:
+```
+PAYMENT_API_SECRET=your-very-secure-random-secret-key-here
+```
+
+Для генерации секретного ключа можно использовать:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
 
 ## Лицензия
 

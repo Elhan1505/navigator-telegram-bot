@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python -m telegram_bot",
+    "startCommand": "uvicorn telegram_bot.payment_api:app --host 0.0.0.0 --port 8000 & python -m telegram_bot",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
