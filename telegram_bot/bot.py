@@ -5,6 +5,7 @@ import os
 import sys
 import signal
 import logging
+import hashlib
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
@@ -36,10 +37,20 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Клавиатура для удобного доступа к функциям
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
-        [KeyboardButton("👤 Мой профиль"), KeyboardButton("🔄 Новый диалог")],
+        [KeyboardButton("👤 Мой профиль"), KeyboardButton("❓ Помощь")],
+        [KeyboardButton("🆕 Новый диалог"), KeyboardButton("📣 Реферальный код"), KeyboardButton("🆔 Мой ID")],
     ],
     resize_keyboard=True,
 )
+
+
+def generate_referral_code(telegram_id: int) -> str:
+    """
+    Генерирует детерминированный реферальный код на основе telegram_id.
+    Код будет одинаковым для одного и того же telegram_id.
+    """
+    raw = str(telegram_id).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:8].upper()
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -145,8 +156,11 @@ async def new_dialog_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     Обработчик команды /new_dialog.
     Объясняет, что начинается новый диалог.
     """
+    telegram_id = update.effective_user.id
+    logger.info(f"Команда /new_dialog от пользователя {telegram_id}")
+
     text = (
-        "🔄 **Новый диалог**\n\n"
+        "🆕 **Новый диалог**\n\n"
         "Начинается новый диалог. История предыдущих сообщений используется на стороне "
         "NAVIGATOR сервера для поддержания контекста разговора.\n\n"
         "Если вы хотите начать с чистого листа по новой теме, просто напишите свой первый вопрос!"
@@ -154,6 +168,82 @@ async def new_dialog_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await update.message.reply_text(
         text,
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик команды /help.
+    Показывает справку по использованию бота.
+    """
+    telegram_id = update.effective_user.id
+    logger.info(f"Команда /help от пользователя {telegram_id}")
+
+    help_text = (
+        "❓ **Справка по боту NAVIGATOR / VOCALIS**\n\n"
+        "Я — бот для работы с фреймворками NAVIGATOR и VOCALIS.\n\n"
+        "💳 **Как получить доступ:**\n"
+        "1️⃣ Получите код доступа (купите или получите от администратора)\n"
+        "2️⃣ Активируйте его командой: `/start КОД`\n"
+        "3️⃣ Проверьте статус и лимиты: `/profile`\n\n"
+        "ℹ️ **Основные команды:**\n"
+        "• `/start` — запуск и активация кода\n"
+        "• `/profile` — ваш профиль и лимиты\n"
+        "• `/new_dialog` — начать новый диалог\n"
+        "• `/referral` — ваш реферальный код\n"
+        "• `/myid` — ваш Telegram ID\n"
+        "• `/help` — эта справка\n\n"
+        "📝 **Для работы с ботом:**\n"
+        "Просто напишите ваш вопрос или задачу текстом, и я постараюсь помочь!"
+    )
+
+    await update.message.reply_text(
+        help_text,
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик команды /myid.
+    Показывает Telegram ID пользователя.
+    """
+    telegram_id = update.effective_user.id
+    logger.info(f"Команда /myid от пользователя {telegram_id}")
+
+    myid_text = (
+        f"🆔 **Ваш Telegram ID:** `{telegram_id}`\n\n"
+        f"Его можно использовать для поддержки и в личном кабинете."
+    )
+
+    await update.message.reply_text(
+        myid_text,
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
+async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик команды /referral.
+    Показывает реферальный код пользователя.
+    """
+    telegram_id = update.effective_user.id
+    logger.info(f"Команда /referral от пользователя {telegram_id}")
+
+    referral_code = generate_referral_code(telegram_id)
+
+    referral_text = (
+        f"📣 **Ваш реферальный код:** `{referral_code}`\n\n"
+        f"Передайте этот код друзьям и знакомым.\n"
+        f"В следующих версиях мы добавим учёт приглашённых пользователей и бонусную систему!"
+    )
+
+    await update.message.reply_text(
+        referral_text,
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD,
     )
@@ -174,9 +264,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.info(f"Пользователь {telegram_id} нажал кнопку 'Мой профиль'")
         await profile_command(update, context)
         return
-    elif user_text == "🔄 Новый диалог":
+    elif user_text == "🆕 Новый диалог":
         logger.info(f"Пользователь {telegram_id} нажал кнопку 'Новый диалог'")
         await new_dialog_command(update, context)
+        return
+    elif user_text == "❓ Помощь":
+        logger.info(f"Пользователь {telegram_id} нажал кнопку 'Помощь'")
+        await help_command(update, context)
+        return
+    elif user_text == "📣 Реферальный код":
+        logger.info(f"Пользователь {telegram_id} нажал кнопку 'Реферальный код'")
+        await referral_command(update, context)
+        return
+    elif user_text == "🆔 Мой ID":
+        logger.info(f"Пользователь {telegram_id} нажал кнопку 'Мой ID'")
+        await myid_command(update, context)
         return
 
     with SessionLocal() as db:
@@ -256,6 +358,9 @@ def run_bot():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("profile", profile_command))
     application.add_handler(CommandHandler("new_dialog", new_dialog_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("myid", myid_command))
+    application.add_handler(CommandHandler("referral", referral_command))
 
     # Добавляем обработчик текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -264,7 +369,7 @@ def run_bot():
     logger.info("NAVIGATOR Telegram bot starting...")
     logger.info("Polling mode enabled")
     logger.info(f"Bot token: ...{TELEGRAM_BOT_TOKEN[-10:] if TELEGRAM_BOT_TOKEN else 'NOT SET'}")
-    logger.info("Доступные команды: /start, /profile, /new_dialog")
+    logger.info("Доступные команды: /start, /profile, /new_dialog, /help, /myid, /referral")
     logger.info("=" * 60)
 
     # Настройка graceful shutdown
