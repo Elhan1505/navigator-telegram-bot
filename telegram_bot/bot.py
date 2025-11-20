@@ -116,23 +116,26 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     Показывает профиль пользователя с информацией о доступе.
     """
     telegram_id = update.effective_user.id
-    logger.info(f"Команда /profile от пользователя {telegram_id}")
+    username = update.effective_user.username or "unknown"
+    logger.info(f"Команда /profile от пользователя {telegram_id} (@{username})")
 
     try:
         with SessionLocal() as db:
             profile_text = format_profile(db, telegram_id)
-            logger.debug(f"Профиль для {telegram_id} сформирован")
 
         await update.message.reply_text(
             profile_text,
             parse_mode="Markdown",
             reply_markup=MAIN_KEYBOARD,
         )
-        logger.info(f"Профиль отправлен пользователю {telegram_id}")
+        logger.info(f"Профиль успешно отправлен пользователю {telegram_id}")
     except Exception as e:
-        logger.exception(f"Ошибка при обработке /profile для пользователя {telegram_id}: {e}")
+        logger.error(
+            f"Критическая ошибка при обработке /profile для {telegram_id}: {e}",
+            exc_info=True
+        )
         await update.message.reply_text(
-            "❌ Произошла ошибка при получении профиля. Попробуйте позже.",
+            "❌ Произошла ошибка при получении профиля. Попробуйте позже или обратитесь к администратору.",
             reply_markup=MAIN_KEYBOARD,
         )
 
