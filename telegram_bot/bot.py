@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 from telegram.error import Conflict, NetworkError, TimedOut
 
-from .models import SessionLocal, init_db
+from .models import SessionLocal, init_db, seed_demo_code
 from .access import (
     check_access,
     consume_request,
@@ -233,6 +233,10 @@ def run_bot():
     try:
         init_db()
         logger.info("База данных инициализирована")
+
+        # Создаём демо-код для тестирования, если таблица activation_codes пуста
+        # ПРИМЕЧАНИЕ: Это можно удалить в продакшене
+        seed_demo_code()
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}")
         sys.exit(1)

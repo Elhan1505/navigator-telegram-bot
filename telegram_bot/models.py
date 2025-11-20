@@ -87,3 +87,45 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def seed_demo_code():
+    """
+    Создаёт демо-код активации для тестирования, если таблица активационных кодов пуста.
+
+    Демо-код:
+    - Код: DEMO100
+    - Даёт 100 запросов на 30 дней (как обычный тариф)
+    - Можно использовать только один раз
+    - Привязывается к telegram_id пользователя при активации
+
+    ВНИМАНИЕ: Это демо-функция для тестирования.
+    Код создаётся автоматически только если в таблице activation_codes нет ни одной записи.
+    При необходимости эту функцию можно удалить из кода.
+    """
+    db = SessionLocal()
+    try:
+        # Проверяем, есть ли хоть один код в таблице
+        existing_codes_count = db.query(ActivationCode).count()
+
+        if existing_codes_count == 0:
+            # Таблица пуста - создаём демо-код
+            demo_code = ActivationCode(
+                code="DEMO100",
+                telegram_id=None,  # Не привязан к пользователю до активации
+                used_at=None,      # Не использован
+            )
+            db.add(demo_code)
+            db.commit()
+
+            print("✅ Демо-код DEMO100 успешно создан для тестирования")
+            print("   Для активации используйте: /start DEMO100")
+        else:
+            # В таблице уже есть коды - ничего не делаем
+            print(f"ℹ️  В таблице activation_codes уже есть {existing_codes_count} код(ов), пропускаем создание демо-кода")
+
+    except Exception as e:
+        print(f"❌ Ошибка при создании демо-кода: {e}")
+        db.rollback()
+    finally:
+        db.close()
