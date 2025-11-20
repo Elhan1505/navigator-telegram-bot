@@ -223,39 +223,86 @@ def activate_code(db: Session, telegram_id: int, code: str) -> Tuple[bool, str]:
 def format_profile(db: Session, telegram_id: int) -> str:
     """
     Формирует текст профиля пользователя.
+    Обрабатывает случаи с активным и неактивным доступом.
     """
-    user = get_or_create_user(db, telegram_id)
-    status = check_access(db, telegram_id)
+    import logging
+    logger = logging.getLogger(__name__)
 
-    if status.has_access:
-        status_emoji = "✅"
-        status_text = "Активен"
-    else:
-        status_emoji = "❌"
-        status_text = "Неактивен"
+    try:
+        user = get_or_create_user(db, telegram_id)
+        status = check_access(db, telegram_id)
 
-    remaining = user.total_requests_in_plan - user.used_requests_in_plan
+        # Защита от None значений (на случай битых данных в БД)
+        total_in_plan = user.total_requests_in_plan if user.total_requests_in_plan is not None else 0
+        used_in_plan = user.used_requests_in_plan if user.used_requests_in_plan is not None else 0
+        total_all_time = user.total_requests_all_time if user.total_requests_all_time is not None else 0
+        remaining = total_in_plan - used_in_plan
 
-    profile_text = (
-        f"👤 **Ваш профиль**\n\n"
-        f"{status_emoji} Статус: **{status_text}**\n"
-        f"📦 Запросов в пакете: {user.total_requests_in_plan}\n"
-        f"✅ Использовано: {user.used_requests_in_plan}\n"
-        f"📊 Осталось: {remaining}\n"
-    )
+        # Проверяем, активировал ли пользователь хоть раз доступ
+        has_ever_activated = total_in_plan > 0 or total_all_time > 0
 
-    if user.expires_at:
-        profile_text += f"📅 Действителен до: {user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC\n"
+        if not has_ever_activated:
+            # Пользователь никогда не активировал доступ
+            logger.info(f"Профиль для {telegram_id}: пользователь без активаций")
+            profile_text = (
+                f"👤 **Ваш профиль**\n\n"
+                f"❌ **У вас пока нет активного доступа.**\n\n"
+                f"Для активации доступа:\n"
+                f"• Получите код активации\n"
+                f"• Отправьте команду: `/start КОД`\n\n"
+                f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
+            )
+            if PAYMENT_LINK:
+                profile_text += f"\n🔗 Для покупки кода перейдите по ссылке:\n{PAYMENT_LINK}"
+            else:
+                profile_text += "\n💬 Для получения кода обратитесь к администратору."
 
-    profile_text += f"📈 Всего запросов за всё время: {user.total_requests_all_time}\n"
+            return profile_text
 
-    # Добавляем информацию о продлении
-    if not status.has_access or remaining < 20:
-        profile_text += f"\n💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
-        if PAYMENT_LINK:
-            profile_text += f"\n🔗 Для активации/продления перейдите по ссылке:\n{PAYMENT_LINK}"
+        # Пользователь имеет (или имел) активацию
+        if status.has_access:
+            status_emoji = "✅"
+            status_text = "Активен"
+        else:
+            status_emoji = "❌"
+            status_text = "Неактивен"
 
-    return profile_text
+        profile_text = (
+            f"👤 **Ваш профиль**\n\n"
+            f"{status_emoji} Статус: **{status_text}**\n"
+            f"📦 Запросов в пакете: {total_in_plan}\n"
+            f"✅ Использовано: {used_in_plan}\n"
+            f"📊 Осталось: {remaining}\n"
+        )
+
+        if user.expires_at:
+            profile_text += f"📅 Действителен до: {user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC\n"
+
+        profile_text += f"📈 Всего запросов за всё время: {total_all_time}\n"
+
+        # Добавляем информацию о продлении
+        if not status.has_access or remaining < 20:
+            profile_text += f"\n💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
+            if PAYMENT_LINK:
+                profile_text += f"\n🔗 Для активации/продления перейдите по ссылке:\n{PAYMENT_LINK}"
+
+        # Логируем успешное формирование профиля
+        logger.info(
+            f"Профиль для {telegram_id}: статус={status_text}, "
+            f"запросов={used_in_plan}/{total_in_plan}, всего={total_all_time}"
+        )
+
+        return profile_text
+
+    except Exception as e:
+        logger.error(f"Ошибка при формировании профиля для {telegram_id}: {e}", exc_info=True)
+        # Возвращаем безопасное сообщение вместо падения
+        return (
+            f"👤 **Ваш профиль**\n\n"
+            f"❌ Не удалось загрузить данные профиля.\n\n"
+            f"Попробуйте активировать доступ командой: `/start КОД`\n\n"
+            f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
+        )
 
 
 def format_denial_message(status: AccessStatus) -> str:
