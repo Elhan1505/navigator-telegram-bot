@@ -2,6 +2,8 @@
 Модуль Telegram-бота NAVIGATOR с системой платного доступа.
 """
 import os
+import sys
+import signal
 import logging
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -11,6 +13,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from telegram.error import Conflict, NetworkError, TimedOut
 
 from .models import SessionLocal, init_db
 from .access import (
@@ -45,7 +48,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     Если передан код — пытается активировать доступ.
     """
     telegram_id = update.effective_user.id
+    username = update.effective_user.username or "unknown"
     args = context.args
+
+    logger.info(f"Команда /start от пользователя {telegram_id} (@{username}), args: {args}")
 
     # Инициализируем БД при первом запуске
     init_db()
@@ -110,15 +116,25 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     Показывает профиль пользователя с информацией о доступе.
     """
     telegram_id = update.effective_user.id
+    logger.info(f"Команда /profile от пользователя {telegram_id}")
 
-    with SessionLocal() as db:
-        profile_text = format_profile(db, telegram_id)
+    try:
+        with SessionLocal() as db:
+            profile_text = format_profile(db, telegram_id)
+            logger.debug(f"Профиль для {telegram_id} сформирован")
 
-    await update.message.reply_text(
-        profile_text,
-        parse_mode="Markdown",
-        reply_markup=MAIN_KEYBOARD,
-    )
+        await update.message.reply_text(
+            profile_text,
+            parse_mode="Markdown",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        logger.info(f"Профиль отправлен пользователю {telegram_id}")
+    except Exception as e:
+        logger.exception(f"Ошибка при обработке /profile для пользователя {telegram_id}: {e}")
+        await update.message.reply_text(
+            "❌ Произошла ошибка при получении профиля. Попробуйте позже.",
+            reply_markup=MAIN_KEYBOARD,
+        )
 
 
 async def new_dialog_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -148,11 +164,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_text = update.message.text or ""
     telegram_id = update.effective_user.id
 
+    logger.debug(f"Получено сообщение от {telegram_id}: {user_text[:50]}...")
+
     # Обработка кнопок клавиатуры
     if user_text == "👤 Мой профиль":
+        logger.info(f"Пользователь {telegram_id} нажал кнопку 'Мой профиль'")
         await profile_command(update, context)
         return
     elif user_text == "🔄 Новый диалог":
+        logger.info(f"Пользователь {telegram_id} нажал кнопку 'Новый диалог'")
         await new_dialog_command(update, context)
         return
 
@@ -201,7 +221,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 def run_bot():
     """
-    Запускает Telegram-бот в режиме polling.
+    Запускает Telegram-бот в режиме polling с обработкой ошибок Conflict.
     """
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError(
@@ -210,11 +230,19 @@ def run_bot():
         )
 
     # Инициализируем базу данных
-    init_db()
-    logger.info("База данных инициализирована")
+    try:
+        init_db()
+        logger.info("База данных инициализирована")
+    except Exception as e:
+        logger.error(f"Ошибка инициализации базы данных: {e}")
+        sys.exit(1)
 
     # Создаём приложение бота
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    try:
+        application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    except Exception as e:
+        logger.error(f"Ошибка создания приложения бота: {e}")
+        sys.exit(1)
 
     # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start_command))
@@ -224,8 +252,52 @@ def run_bot():
     # Добавляем обработчик текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("NAVIGATOR Telegram bot started (polling mode)")
+    logger.info("=" * 60)
+    logger.info("NAVIGATOR Telegram bot starting...")
+    logger.info("Polling mode enabled")
+    logger.info(f"Bot token: ...{TELEGRAM_BOT_TOKEN[-10:] if TELEGRAM_BOT_TOKEN else 'NOT SET'}")
     logger.info("Доступные команды: /start, /profile, /new_dialog")
+    logger.info("=" * 60)
 
-    # Запускаем бота
-    application.run_polling()
+    # Настройка graceful shutdown
+    def signal_handler(sig, frame):
+        logger.info("Получен сигнал завершения. Останавливаю бот...")
+        application.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Запускаем бота с обработкой ошибок
+    try:
+        logger.info("Запуск polling...")
+        # drop_pending_updates=True помогает избежать конфликтов при рестарте
+        application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES,
+        )
+    except Conflict as e:
+        logger.error("=" * 60)
+        logger.error("ОШИБКА: Получен Conflict от Telegram API")
+        logger.error("Возможные причины:")
+        logger.error("  1. Бот уже запущен в другом месте (другой сервис/локально)")
+        logger.error("  2. Несколько экземпляров бота на Railway")
+        logger.error("  3. Старый процесс не завершился корректно")
+        logger.error("Решение:")
+        logger.error("  - Убедитесь, что бот не запущен где-то ещё")
+        logger.error("  - Проверьте количество реплик на Railway (должна быть 1)")
+        logger.error("  - Используйте /revoke в @BotFather, если проблема не уходит")
+        logger.error(f"Детали ошибки: {e}")
+        logger.error("=" * 60)
+        # Корректно завершаем работу без бесконечных рестартов
+        sys.exit(1)
+    except NetworkError as e:
+        logger.error(f"Ошибка сети при работе с Telegram API: {e}")
+        logger.error("Проверьте подключение к интернету и попробуйте снова")
+        sys.exit(1)
+    except TimedOut as e:
+        logger.error(f"Таймаут при работе с Telegram API: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.exception(f"Неожиданная ошибка при запуске бота: {e}")
+        sys.exit(1)
