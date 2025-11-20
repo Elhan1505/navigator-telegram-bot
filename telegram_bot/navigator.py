@@ -32,9 +32,9 @@ async def call_navigator(message: str, user_id: int) -> str:
     # Подготавливаем данные запроса
     request_data = {
         "framework": NAVIGATOR_FRAMEWORK_NAME,
-        "input": {
-            "message": message,
-            "user_id": str(user_id),
+        "input": message,
+        "state": {
+            "telegram_id": str(user_id)
         }
     }
 
