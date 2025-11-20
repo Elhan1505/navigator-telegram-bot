@@ -201,7 +201,19 @@ def activate_code(db: Session, telegram_id: int, code: str) -> Tuple[bool, str]:
         success, message = activate_or_extend_plan(db, telegram_id)
         return success, message
 
-    # Код существует - проверяем, кто его активировал
+    # Код существует - проверяем его статус
+    # Если код ещё не использован (telegram_id is None) - можно активировать
+    if activation_code.telegram_id is None:
+        # Код доступен для активации - активируем
+        activation_code.telegram_id = telegram_id
+        activation_code.used_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # Активируем тариф
+        success, message = activate_or_extend_plan(db, telegram_id)
+        return success, message
+
+    # Код уже использован - проверяем, кто его активировал
     if activation_code.telegram_id == telegram_id:
         return False, "⚠️ Вы уже активировали этот код ранее."
     else:
