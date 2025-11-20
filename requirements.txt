@@ -9,3 +9,7 @@ sqlalchemy>=2.0.0
 
 # PostgreSQL драйвер (опционально, если используется PostgreSQL)
 psycopg2-binary>=2.9.0
+
+# FastAPI и HTTP-сервер для Payment API
+fastapi>=0.104.0
+uvicorn>=0.24.0

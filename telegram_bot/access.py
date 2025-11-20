@@ -333,6 +333,54 @@ def format_profile(db: Session, telegram_id: int) -> str:
         )
 
 
+def create_paid_activation_code(
+    db: Session,
+    code: str,
+    total_requests: int = PLAN_REQUESTS,
+    days_valid: int = PLAN_DAYS,
+    note: Optional[str] = None,
+) -> ActivationCode:
+    """
+    Создаёт новый платный код активации.
+
+    Args:
+        db: Сессия базы данных
+        code: Уникальный код активации
+        total_requests: Количество запросов в тарифе (по умолчанию 100)
+        days_valid: Срок действия в днях (по умолчанию 30)
+        note: Необязательная пометка о происхождении кода
+
+    Returns:
+        ActivationCode: Созданный код активации
+
+    Raises:
+        ValueError: Если код уже существует в базе данных
+    """
+    # Проверяем, существует ли уже такой код
+    existing_code = db.query(ActivationCode).filter(ActivationCode.code == code).first()
+    if existing_code:
+        raise ValueError(f"Код {code} уже существует в базе данных")
+
+    # Создаём новый код (не привязанный к пользователю)
+    activation_code = ActivationCode(
+        code=code,
+        telegram_id=None,  # Код ещё никому не принадлежит
+        used_at=None,      # Код ещё не использован
+    )
+
+    db.add(activation_code)
+    db.commit()
+    db.refresh(activation_code)
+
+    logger.info(
+        f"✅ Создан платный код активации: {code} "
+        f"(лимит: {total_requests} запросов, срок: {days_valid} дней)"
+        f"{f', метка: {note}' if note else ''}"
+    )
+
+    return activation_code
+
+
 def format_denial_message(status: AccessStatus) -> str:
     """
     Формирует сообщение об отказе в доступе.
