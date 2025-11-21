@@ -20,6 +20,7 @@ from .access import (
     check_access,
     consume_request,
     activate_code,
+    activate_paid_code_bh,
     format_profile,
     format_denial_message,
 )
@@ -61,7 +62,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Если передан код активации
         if args and len(args) > 0:
             code = args[0]
-            success, message = activate_code(db, telegram_id, code)
+
+            # Проверяем тип кода и используем соответствующую функцию активации
+            if code.startswith("bh_"):
+                # Платный код BotHelp формата bh_<id>
+                logger.info(f"Обработка платного кода BotHelp: {code} для пользователя {telegram_id}")
+                success, message = activate_paid_code_bh(db, telegram_id, code)
+            else:
+                # DEMO-код или другие коды активации
+                logger.info(f"Обработка стандартного кода активации: {code} для пользователя {telegram_id}")
+                success, message = activate_code(db, telegram_id, code)
 
             await update.message.reply_text(message, reply_markup=MAIN_KEYBOARD)
 
