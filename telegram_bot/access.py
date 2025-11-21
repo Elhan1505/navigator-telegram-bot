@@ -381,6 +381,115 @@ def create_paid_activation_code(
     return activation_code
 
 
+def activate_paid_code_bh(db: Session, telegram_id: int, code: str) -> Tuple[bool, str]:
+    """
+    Активирует платный код доступа формата bh_<id> для пользователя.
+
+    При первой активации:
+    - total_requests_in_plan = 100
+    - used_requests_in_plan = 0
+    - expires_at = сейчас + 30 дней
+
+    При продлении (если доступ уже есть):
+    - total_requests_in_plan += 100
+    - expires_at = max(текущий expires_at, сейчас) + 30 дней
+
+    Args:
+        db: Сессия базы данных
+        telegram_id: Telegram ID пользователя
+        code: Код активации формата "bh_<id>" (например "bh_95")
+
+    Returns:
+        Tuple[bool, str]: (успех, текстовое сообщение для пользователя)
+    """
+    # Разбираем код для получения ID
+    try:
+        if not code.startswith("bh_"):
+            return False, "❌ Неверный формат платного кода."
+
+        code_id = code[3:]  # Получаем часть после "bh_"
+        # Проверяем, что это число
+        int(code_id)
+    except (ValueError, IndexError):
+        logger.warning(f"Попытка активации некорректного bh-кода: {code} (telegram_id={telegram_id})")
+        return False, "❌ Неверный формат платного кода. Код должен быть вида bh_<число>."
+
+    user = get_or_create_user(db, telegram_id)
+    now = datetime.now(timezone.utc)
+
+    # Определяем, первая это активация или продление
+    is_first_activation = user.total_requests_in_plan == 0
+
+    if is_first_activation:
+        # Первая активация - создаём новый пакет
+        user.total_requests_in_plan = PLAN_REQUESTS
+        user.used_requests_in_plan = 0
+        user.expires_at = now + timedelta(days=PLAN_DAYS)
+        user.last_activation_at = now
+        user.updated_at = now
+
+        db.commit()
+        db.refresh(user)
+
+        logger.info(
+            f"✅ Первая активация платного кода {code} для пользователя {telegram_id}: "
+            f"remaining_requests={user.total_requests_in_plan}, "
+            f"expires_at={user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC"
+        )
+
+        message = (
+            f"✅ Платный доступ успешно активирован!\n\n"
+            f"🎉 Вы получили полный доступ к боту NAVIGATOR / VOCALIS.\n\n"
+            f"📦 Доступно запросов: {user.total_requests_in_plan}\n"
+            f"📅 Действителен до: {user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC\n\n"
+            f"💬 Можете задавать вопросы — я готов помочь!"
+        )
+
+        return True, message
+
+    else:
+        # Продление - добавляем запросы и продлеваем срок
+        old_total = user.total_requests_in_plan
+        old_expires = normalize_datetime_to_utc(user.expires_at)
+
+        # Добавляем запросы
+        user.total_requests_in_plan += PLAN_REQUESTS
+
+        # Продлеваем срок: считаем от более поздней даты (текущий expires_at или сейчас)
+        if old_expires and old_expires > now:
+            # Доступ ещё активен - продлеваем от текущей даты окончания
+            user.expires_at = old_expires + timedelta(days=PLAN_DAYS)
+        else:
+            # Доступ истёк - продлеваем от текущего момента
+            user.expires_at = now + timedelta(days=PLAN_DAYS)
+
+        user.last_activation_at = now
+        user.updated_at = now
+
+        db.commit()
+        db.refresh(user)
+
+        remaining = user.total_requests_in_plan - user.used_requests_in_plan
+
+        logger.info(
+            f"✅ Продление доступа по коду {code} для пользователя {telegram_id}: "
+            f"total_requests={old_total} → {user.total_requests_in_plan} (+{PLAN_REQUESTS}), "
+            f"remaining_requests={remaining}, "
+            f"expires_at={user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC"
+        )
+
+        message = (
+            f"✅ Доступ успешно продлён!\n\n"
+            f"📦 Добавлено запросов: +{PLAN_REQUESTS}\n"
+            f"📊 Доступно сейчас: {remaining} из {user.total_requests_in_plan}\n"
+            f"📅 Новый срок действия: {user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC\n"
+            f"⏰ Продлено на: +{PLAN_DAYS} дней\n\n"
+            f"🎉 Спасибо за продление! Можете продолжать работу."
+        )
+
+        return True, message
+
+
 def format_denial_message(status: AccessStatus) -> str:
     """
     Формирует сообщение об отказе в доступе.
