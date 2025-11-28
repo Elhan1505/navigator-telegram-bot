@@ -536,7 +536,7 @@ async def apply_referral_bonuses(db: Session, telegram_id: int, bot_instance) ->
         return None  # Не пришел по рефералке
 
     # Проверяем, был ли уже начислен бонус пригласившему
-    if user.referral_bonus_given == 1:
+    if user.referral_bonus_given:
         logger.info(f"Реферальный бонус для {telegram_id} уже был начислен ранее")
         return None  # Бонус уже был начислен
 
@@ -576,7 +576,7 @@ async def apply_referral_bonuses(db: Session, telegram_id: int, bot_instance) ->
             logger.error(f"Не удалось отправить уведомление пользователю {user.referred_by}: {e}")
 
     # Отмечаем, что бонус начислен
-    user.referral_bonus_given = 1
+    user.referral_bonus_given = True
     user.updated_at = datetime.now(timezone.utc)
 
     db.commit()
