@@ -12,7 +12,7 @@ from .models import User, ActivationCode
 logger = logging.getLogger(__name__)
 
 # Константы тарифа
-PLAN_REQUESTS = 100  # Количество запросов в одном тарифе
+PLAN_REQUESTS = 70   # Количество запросов в одном тарифе
 PLAN_DAYS = 30       # Срок действия тарифа в днях
 PLAN_PRICE = 1500    # Цена в рублях (для текстов)
 
