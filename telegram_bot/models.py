@@ -2,10 +2,13 @@
 Модели базы данных для хранения информации о пользователях и кодах активации.
 """
 import os
+import logging
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+logger = logging.getLogger(__name__)
 
 # Получаем URL базы данных из окружения или используем SQLite по умолчанию
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./navigator_bot.db")
@@ -13,6 +16,14 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./navigator_bot.db")
 # Для совместимости с некоторыми провайдерами, которые используют postgres://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Определяем тип базы данных для логирования
+is_postgres = DATABASE_URL.startswith("postgresql://")
+db_type = "PostgreSQL" if is_postgres else "SQLite"
+db_location = DATABASE_URL.split("@")[1].split("/")[0] if is_postgres else "локальный файл navigator_bot.db"
+
+logger.info(f"🗄️  Тип базы данных: {db_type}")
+logger.info(f"📍 Расположение: {db_location}")
 
 # Создаём движок базы данных
 engine = create_engine(
@@ -74,7 +85,23 @@ def init_db():
     """
     Инициализирует базу данных, создавая все таблицы.
     """
-    Base.metadata.create_all(bind=engine)
+    try:
+        logger.info("🔄 Инициализация базы данных...")
+        Base.metadata.create_all(bind=engine)
+        logger.info(f"✅ База данных успешно инициализирована ({db_type})")
+
+        # Проверяем подключение
+        db = SessionLocal()
+        try:
+            # Простой запрос для проверки подключения
+            db.execute(text("SELECT 1"))
+            logger.info("✅ Подключение к базе данных работает корректно")
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при инициализации базы данных: {e}")
+        raise
 
 
 def get_db():
