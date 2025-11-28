@@ -4,7 +4,7 @@
 import os
 import logging
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger, text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger, Boolean, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -63,7 +63,7 @@ class User(Base):
 
     # Реферальная система
     referred_by = Column(BigInteger, nullable=True)  # telegram_id пригласившего пользователя
-    referral_bonus_given = Column(Integer, default=0)  # Был ли начислен бонус пригласившему (0=нет, 1=да)
+    referral_bonus_given = Column(Boolean, default=False, server_default=text('false'))  # Был ли начислен бонус пригласившему
 
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_id}, requests={self.used_requests_in_plan}/{self.total_requests_in_plan})>"
