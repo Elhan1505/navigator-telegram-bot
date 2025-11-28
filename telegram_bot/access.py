@@ -381,7 +381,7 @@ def create_paid_activation_code(
     return activation_code
 
 
-def activate_paid_code_bh(db: Session, telegram_id: int, code: str) -> Tuple[bool, str]:
+async def activate_paid_code_bh(db: Session, telegram_id: int, code: str, bot_instance=None) -> Tuple[bool, str]:
     """
     Активирует платный код доступа формата bh_<id> для пользователя.
 
@@ -437,6 +437,11 @@ def activate_paid_code_bh(db: Session, telegram_id: int, code: str) -> Tuple[boo
             f"expires_at={user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC"
         )
 
+        # Применяем реферальные бонусы (если пользователь пришёл по реферальной ссылке)
+        bonus_message = None
+        if bot_instance:
+            bonus_message = await apply_referral_bonuses(db, telegram_id, bot_instance)
+
         message = (
             f"✅ Платный доступ успешно активирован!\n\n"
             f"🎉 Вы получили полный доступ к боту NAVIGATOR / VOCALIS.\n\n"
@@ -444,6 +449,10 @@ def activate_paid_code_bh(db: Session, telegram_id: int, code: str) -> Tuple[boo
             f"📅 Действителен до: {user.expires_at.strftime('%d.%m.%Y %H:%M')} UTC\n\n"
             f"💬 Можете задавать вопросы — я готов помочь!"
         )
+
+        # Добавляем сообщение о реферальных бонусах, если они были начислены
+        if bonus_message:
+            message += f"\n\n{bonus_message}"
 
         return True, message
 
@@ -503,3 +512,73 @@ def format_denial_message(status: AccessStatus) -> str:
         message += "\n💬 Для получения кода активации обратитесь к администратору."
 
     return message
+
+
+async def apply_referral_bonuses(db: Session, telegram_id: int, bot_instance) -> Optional[str]:
+    """
+    Начисляет реферальные бонусы при первой оплате:
+    - Новому пользователю: +20 запросов
+    - Пригласившему: +20 запросов (если бонус еще не начислен)
+
+    Args:
+        db: Сессия базы данных
+        telegram_id: Telegram ID пользователя, который оплатил
+        bot_instance: Экземпляр бота для отправки уведомлений
+
+    Returns:
+        str | None: Сообщение о начисленных бонусах или None
+    """
+    user = get_or_create_user(db, telegram_id)
+
+    # Проверяем, был ли пользователь приглашен кем-то
+    if not user.referred_by:
+        logger.info(f"Пользователь {telegram_id} не был приглашён по реферальной ссылке")
+        return None  # Не пришел по рефералке
+
+    # Проверяем, был ли уже начислен бонус пригласившему
+    if user.referral_bonus_given == 1:
+        logger.info(f"Реферальный бонус для {telegram_id} уже был начислен ранее")
+        return None  # Бонус уже был начислен
+
+    # Начисляем +20 новому пользователю
+    user.total_requests_in_plan += 20
+    logger.info(f"Начислено +20 запросов новому пользователю {telegram_id} (реферал)")
+
+    # Ищем пригласившего
+    referrer = db.query(User).filter(User.telegram_id == user.referred_by).first()
+    if referrer:
+        # Начисляем +20 пригласившему
+        referrer.total_requests_in_plan += 20
+        referrer.updated_at = datetime.now(timezone.utc)
+
+        # Вычисляем текущий баланс пригласившего
+        remaining_requests = referrer.total_requests_in_plan - referrer.used_requests_in_plan
+
+        logger.info(
+            f"Начислено +20 запросов пригласившему {user.referred_by} "
+            f"(за реферала {telegram_id}). Баланс: {remaining_requests}"
+        )
+
+        # Отправляем уведомление пригласившему
+        try:
+            notification_text = (
+                f"🎉 Ваш друг активировал доступ по вашей реферальной ссылке!\n"
+                f"Вам начислено **+20 бонусных запросов**.\n\n"
+                f"📊 Текущий баланс: **{remaining_requests} запросов**."
+            )
+            await bot_instance.send_message(
+                chat_id=user.referred_by,
+                text=notification_text,
+                parse_mode="Markdown"
+            )
+            logger.info(f"Уведомление о реферальном бонусе отправлено пользователю {user.referred_by}")
+        except Exception as e:
+            logger.error(f"Не удалось отправить уведомление пользователю {user.referred_by}: {e}")
+
+    # Отмечаем, что бонус начислен
+    user.referral_bonus_given = 1
+    user.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    return "🎁 Реферальные бонусы начислены: +20 запросов вам и +20 вашему другу!"
