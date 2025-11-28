@@ -61,6 +61,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    # Реферальная система
+    referred_by = Column(BigInteger, nullable=True)  # telegram_id пригласившего пользователя
+    referral_bonus_given = Column(Integer, default=0)  # Был ли начислен бонус пригласившему (0=нет, 1=да)
+
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_id}, requests={self.used_requests_in_plan}/{self.total_requests_in_plan})>"
 
