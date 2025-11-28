@@ -94,7 +94,7 @@ def issue_paid_code(payload: IssuePaidCodeRequest):
         )
 
     # Параметры тарифа
-    limit_requests = PLAN_REQUESTS  # 100 запросов
+    limit_requests = PLAN_REQUESTS  # 70 запросов
     days_valid = PLAN_DAYS          # 30 дней
 
     # Генерация уникального кода (с защитой от коллизий)
