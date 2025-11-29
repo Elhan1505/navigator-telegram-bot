@@ -276,11 +276,11 @@ def format_profile(db: Session, telegram_id: int) -> str:
             profile_text = (
                 f"👤 **Ваш профиль**\n\n"
                 f"❌ **У вас пока нет активного доступа.**\n\n"
-                f"💳 **Оплатить доступ:** {PAYMENT_URL}\n\n"
-                f"Или активируйте код:\n"
+                f"Для активации:\n"
                 f"• Получите код активации\n"
                 f"• Отправьте команду: `/start КОД`\n\n"
-                f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽"
+                f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n\n"
+                f"Оплатить доступ можно с помощью кнопки ниже 👇"
             )
 
             return profile_text
@@ -308,8 +308,7 @@ def format_profile(db: Session, telegram_id: int) -> str:
 
         # Добавляем информацию о продлении
         if not status.has_access or remaining < 20:
-            profile_text += f"\n💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
-            profile_text += f"\n💳 **Оплатить доступ:** {PAYMENT_URL}"
+            profile_text += f"\n💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽"
 
         # Логируем успешное формирование профиля
         logger.info(
@@ -501,8 +500,8 @@ def format_denial_message(status: AccessStatus) -> str:
     Формирует сообщение об отказе в доступе.
     """
     message = f"❌ {status.denial_reason}\n\n"
-    message += f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
-    message += f"\n💳 **Оплатить доступ:** {PAYMENT_URL}"
+    message += f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n\n"
+    message += f"Оплатить доступ можно с помощью кнопки ниже 👇"
 
     return message
 
