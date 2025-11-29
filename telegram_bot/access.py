@@ -21,6 +21,7 @@ REQUEST_WARNING_THRESHOLDS = [30, 10, 3]  # Предупреждения при 
 DAY_WARNING_THRESHOLDS = [7, 3, 1]        # Предупреждения при оставшихся днях
 
 PAYMENT_LINK = os.getenv("PAYMENT_LINK", "")
+PAYMENT_URL = "https://t.me/nayti_professiyu_bot?start=c1763645318165-ds"
 
 
 def normalize_datetime_to_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -275,15 +276,12 @@ def format_profile(db: Session, telegram_id: int) -> str:
             profile_text = (
                 f"👤 **Ваш профиль**\n\n"
                 f"❌ **У вас пока нет активного доступа.**\n\n"
-                f"Для активации доступа:\n"
+                f"💳 **Оплатить доступ:** {PAYMENT_URL}\n\n"
+                f"Или активируйте код:\n"
                 f"• Получите код активации\n"
                 f"• Отправьте команду: `/start КОД`\n\n"
-                f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
+                f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽"
             )
-            if PAYMENT_LINK:
-                profile_text += f"\n🔗 Для покупки кода перейдите по ссылке:\n{PAYMENT_LINK}"
-            else:
-                profile_text += "\n💬 Для получения кода обратитесь к администратору."
 
             return profile_text
 
@@ -311,8 +309,7 @@ def format_profile(db: Session, telegram_id: int) -> str:
         # Добавляем информацию о продлении
         if not status.has_access or remaining < 20:
             profile_text += f"\n💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
-            if PAYMENT_LINK:
-                profile_text += f"\n🔗 Для активации/продления перейдите по ссылке:\n{PAYMENT_LINK}"
+            profile_text += f"\n💳 **Оплатить доступ:** {PAYMENT_URL}"
 
         # Логируем успешное формирование профиля
         logger.info(
@@ -505,11 +502,7 @@ def format_denial_message(status: AccessStatus) -> str:
     """
     message = f"❌ {status.denial_reason}\n\n"
     message += f"💰 Тариф: {PLAN_REQUESTS} запросов / {PLAN_DAYS} дней — {PLAN_PRICE} ₽\n"
-
-    if PAYMENT_LINK:
-        message += f"\n🔗 Для активации/продления перейдите по ссылке:\n{PAYMENT_LINK}"
-    else:
-        message += "\n💬 Для получения кода активации обратитесь к администратору."
+    message += f"\n💳 **Оплатить доступ:** {PAYMENT_URL}"
 
     return message
 
