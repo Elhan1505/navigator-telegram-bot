@@ -5,7 +5,7 @@ import os
 import sys
 import signal
 import logging
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -34,6 +34,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+PAYMENT_URL = "https://t.me/nayti_professiyu_bot?start=c1763645318165-ds"
+
+# Inline-клавиатура с кнопкой оплаты
+def get_payment_keyboard():
+    """Возвращает inline-клавиатуру с кнопкой оплаты"""
+    keyboard = [[InlineKeyboardButton("💳 Оплатить доступ", url=PAYMENT_URL)]]
+    return InlineKeyboardMarkup(keyboard)
 
 # Клавиатура для удобного доступа к функциям
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -93,17 +100,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                             "🎁 При покупке пакета вы получите **+20 бонусных запросов**,\n"
                             "   а ваш друг тоже получит **+20 запросов**!\n\n"
                             "❌ У вас пока нет активного доступа.\n\n"
-                            "Для активации:\n"
+                            f"💳 **Оплатить доступ:** {PAYMENT_URL}\n\n"
+                            "Или активируйте код:\n"
                             "1. Получите код активации\n"
-                            "2. Отправьте команду: `/start КОД`\n\n"
+                            "2. Отправьте команду: `/start КОД`"
                         )
-                        payment_link = os.getenv("PAYMENT_LINK", "")
-                        if payment_link:
-                            welcome_text += f"🔗 Или оплатите доступ:\n{payment_link}"
 
                         await update.message.reply_text(
                             welcome_text,
                             parse_mode="Markdown",
+                            reply_markup=get_payment_keyboard(),
+                        )
+                        await update.message.reply_text(
+                            "Используйте кнопки ниже для навигации:",
                             reply_markup=MAIN_KEYBOARD,
                         )
                     else:
@@ -168,14 +177,23 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             welcome_text += (
                 "❌ У вас пока нет активного доступа.\n\n"
-                "Для активации:\n"
+                f"💳 **Оплатить доступ:** {PAYMENT_URL}\n\n"
+                "Или активируйте код:\n"
                 "1. Получите код активации\n"
                 "2. Перейдите по ссылке вида: `t.me/your_bot?start=КОД`\n"
-                "   или отправьте команду: `/start КОД`\n\n"
+                "   или отправьте команду: `/start КОД`"
             )
-            payment_link = os.getenv("PAYMENT_LINK", "")
-            if payment_link:
-                welcome_text += f"🔗 Или оплатите доступ:\n{payment_link}"
+
+            await update.message.reply_text(
+                welcome_text,
+                parse_mode="Markdown",
+                reply_markup=get_payment_keyboard(),
+            )
+            await update.message.reply_text(
+                "Используйте кнопки ниже для навигации:",
+                reply_markup=MAIN_KEYBOARD,
+            )
+            return
 
         await update.message.reply_text(
             welcome_text,
@@ -196,12 +214,30 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         with SessionLocal() as db:
             profile_text = format_profile(db, telegram_id)
+            status = check_access(db, telegram_id)
 
-        await update.message.reply_text(
-            profile_text,
-            parse_mode="Markdown",
-            reply_markup=MAIN_KEYBOARD,
-        )
+            # Проверяем, нужна ли inline-кнопка оплаты
+            user = get_or_create_user(db, telegram_id)
+            has_ever_activated = user.total_requests_in_plan > 0 or user.total_requests_all_time > 0
+            remaining = user.total_requests_in_plan - user.used_requests_in_plan
+
+        # Если нет доступа или мало запросов, добавляем кнопку оплаты
+        if not has_ever_activated or not status.has_access or remaining < 20:
+            await update.message.reply_text(
+                profile_text,
+                parse_mode="Markdown",
+                reply_markup=get_payment_keyboard(),
+            )
+            await update.message.reply_text(
+                "Используйте кнопки ниже для навигации:",
+                reply_markup=MAIN_KEYBOARD,
+            )
+        else:
+            await update.message.reply_text(
+                profile_text,
+                parse_mode="Markdown",
+                reply_markup=MAIN_KEYBOARD,
+            )
         logger.info(f"Профиль успешно отправлен пользователю {telegram_id}")
     except Exception as e:
         logger.error(
@@ -391,6 +427,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text(
                 denial_message,
                 parse_mode="Markdown",
+                reply_markup=get_payment_keyboard(),
+            )
+            await update.message.reply_text(
+                "Используйте кнопки ниже для навигации:",
                 reply_markup=MAIN_KEYBOARD,
             )
             return
